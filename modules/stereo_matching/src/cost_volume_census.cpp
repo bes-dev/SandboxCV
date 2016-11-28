@@ -3,6 +3,7 @@
 
 #define CENSUS_WND 15
 #define CENSUS_BIT 224
+#define COST_MAX 10000
 
 namespace stereo
 {
@@ -32,66 +33,28 @@ CostVolumeCensus::CostVolumeCensus(int disp_max, int rows, int cols):
 void CostVolumeCensus::process(const cv::Mat& left, const cv::Mat& right)
 {
     CV_Assert(left.channels() == 1 && right.channels() == 1);
-
     int H_WD = CENSUS_WND / 2;
-    std::bitset<CENSUS_BIT>* left_code = new std::bitset<CENSUS_BIT>[ rows_ * cols_ ];
-    std::bitset<CENSUS_BIT>* right_code = new std::bitset<CENSUS_BIT>[ rows_ * cols_ ];
-    std::bitset<CENSUS_BIT>* pLCode = left_code;
-    std::bitset<CENSUS_BIT>* pRCode = right_code;
-
+    std::bitset<CENSUS_BIT>* left_code = new std::bitset<CENSUS_BIT>[ left.rows * left.cols ];
+    std::bitset<CENSUS_BIT>* right_code = new std::bitset<CENSUS_BIT>[ left.rows * left.cols ];
     for ( int y = 0; y < rows_; y ++ )
-    {
-		uchar* pLData = ( uchar* ) ( left.ptr<uchar>( y ) );
-		uchar* pRData = ( uchar* ) ( right.ptr<uchar>( y ) );
-		for ( int x = 0; x < cols_; x ++ )
-        {
+		for ( int x = 0; x < cols_; x ++ ) {
 			int bitCnt = 0;
-			for ( int wy = - H_WD; wy <= H_WD; wy ++ )
-            {
-				int qy = ( y + wy + rows_ ) % rows_;
-				uchar* qLData = ( uchar* ) ( left.ptr<uchar>( qy ) );
-				uchar* qRData = ( uchar* ) ( right.ptr<uchar>( qy ) );
-				for ( int wx = - H_WD; wx <= H_WD; wx ++ )
-                {
-					if ( wy != 0 || wx != 0 )
-                    {
-						int qx = ( x + wx + cols_ ) % cols_;
-						( *pLCode )[ bitCnt ] = ( pLData[ x ] > qLData[ qx ] );
-						( *pRCode )[ bitCnt ] = ( pRData[ x ] > qRData[ qx ] );
+			for ( int wy = - H_WD; wy <= H_WD; wy ++ ) {
+				int qy = ( y + wy + left.rows ) % left.rows;
+				for ( int wx = - H_WD; wx <= H_WD; wx ++ ) {
+					if ( wy != 0 || wx != 0 ) {
+						int qx = ( x + wx + left.cols ) % left.cols;
+						left_code[left.cols * y + x][ bitCnt ] = ( left.at<uchar>(y, x) > left.at<uchar>(qy, qx) );
+						right_code[left.cols * y + x][ bitCnt ] = ( right.at<uchar>(y, x) > right.at<uchar>(qy, qx) );
 						bitCnt ++;
 					}
 				}
 			}
-			pLCode ++;
-			pRCode ++;
 		}
-	}
-
-    std::bitset<CENSUS_BIT> lB;
-    std::bitset<CENSUS_BIT> rB;
-	pLCode = left_code;
-
-    cost_volume_.setTo(0);
-
     for( int y = 0; y < rows_; y ++ )
-    {
-		int index = y * cols_;
 		for( int x = 0; x < cols_; x ++ )
-        {
-            float* cost = cost_volume_.ptr<float>(y);
-			lB = *pLCode;
 			for( int d = 0; d < disp_max_; d ++ )
-            {
-                cost[x * disp_max_ + d] = 1.0f;
-				if( x - d >= 0 )
-                {
-					rB = right_code[ index + x - d ];
-					cost[ x * disp_max_ + d ] = ( lB ^ rB ).count() / (float)CENSUS_BIT;
-				}
-			}
-			pLCode ++;
-		}
-	}
+                cost_volume_.at<float>(y, x * disp_max_ + d) = x - d >= 0 ? ( left_code[cols_ * y + x] ^ right_code[cols_ * y + x - d] ).count() / (float)CENSUS_BIT : COST_MAX;
 	delete [] left_code;
 	delete [] right_code;
 }
